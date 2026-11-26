@@ -2,7 +2,8 @@
 
 import {
   today, addDays, sameDay, mondayIndex, monthKey, toISO, fromISO,
-  formatLong, capitalize, parseTime, formatTime, formatKm, plural, MONTHS, WD_SHORT,
+  formatLong, capitalize, parseTime, formatTime, formatKm, formatDistance, parseDistance,
+  plural, MONTHS, WD_SHORT,
 } from './dates.js';
 import { loadAll, save } from './storage.js';
 import {
@@ -21,7 +22,7 @@ const MONTH_KEY = /^\d{4}-\d{2}$/;
 // ---------- Состояние ----------
 // Всё, что меняется, лежит в одном объекте. Экран всегда рисуется из state.
 const state = {
-  profile: null,         // { name: "Даня" }
+  profile: null,         // { name: "Даня", unit: "km" }
   db: {},                // тренировки по месяцам (формат описан в stats.js)
   view: 'today',
   history: [],           // стек экранов для кнопки «Назад»
@@ -332,8 +333,12 @@ function openWater(date) {
   go('water');
 }
 
+// Единица ввода дистанции: 'km' или 'm'. Хранится в профиле, по умолчанию километры
+const distanceUnit = () => state.profile?.unit || 'km';
+const UNIT_LABEL = { km: 'км', m: 'м' };
+
 function segmentTitle({ name, reps, meters }) {
-  const distance = reps > 1 ? `${reps} × ${meters} м` : `${meters} м`;
+  const distance = reps > 1 ? `${reps} × ${formatDistance(meters)}` : formatDistance(meters);
   return name ? `${name} · ${distance}` : distance;
 }
 
@@ -359,10 +364,11 @@ function renderWater(el) {
       <div class="card segments">
         <div id="w-list"></div>
         <form class="seg-form" id="seg-form" autocomplete="off">
-          <input name="name" placeholder="Название" maxlength="20">
+          <input name="name" placeholder="Название (необязательно)" maxlength="20">
           <input name="reps" type="number" inputmode="numeric" min="1" max="50" value="1" aria-label="Повторы">
           <span class="x">×</span>
-          <input name="meters" type="number" inputmode="numeric" min="50" max="50000" placeholder="метры" aria-label="Дистанция в метрах">
+          <input name="distance" inputmode="decimal" placeholder="${distanceUnit() === 'km' ? '0,5' : '500'}" aria-label="Дистанция">
+          <button class="unit-btn" type="button" data-action="toggle-unit" aria-label="Сменить единицу: км или метры">${UNIT_LABEL[distanceUnit()]}</button>
           <button class="add-btn" type="submit" aria-label="Добавить отрезок">${icon('plus', 18)}</button>
         </form>
       </div>
@@ -391,7 +397,7 @@ function updateWater() {
             <button class="icon-x" data-action="remove-seg" data-index="${i}" aria-label="Удалить отрезок">${icon('close', 16)}</button>
           </span>
         </div>`).join('')
-    : '<p class="empty">Добавь отрезки: название, повторы × метры</p>';
+    : '<p class="empty">Добавь отрезки: название, повторы × дистанция</p>';
 }
 
 function waterError(text) {
@@ -487,6 +493,15 @@ const actions = {
     updateWater();
   },
   'save-water': saveWater,
+  // Меняем только кнопку и подсказку в поле, чтобы не сбросить уже введённое
+  'toggle-unit': async (btn) => {
+    const unit = distanceUnit() === 'km' ? 'm' : 'km';
+    const profile = { ...state.profile, unit };
+    state.profile = profile;
+    btn.textContent = UNIT_LABEL[unit];
+    $('#seg-form').distance.placeholder = unit === 'km' ? '0,5' : '500';
+    await save(PROFILE_KEY, profile);  // запоминаем выбор для следующих тренировок
+  },
 };
 
 document.addEventListener('click', async (event) => {
@@ -530,15 +545,17 @@ document.addEventListener('submit', async (event) => {
   // Новый отрезок
   if (form.id === 'seg-form') {
     const reps = Number(form.reps.value);
-    const meters = Number(form.meters.value);
-    if (!Number.isInteger(reps) || reps < 1 || !Number.isInteger(meters) || meters <= 0) {
-      return waterError('Укажи повторы и дистанцию в метрах целыми числами.');
+    const meters = parseDistance(form.distance.value, distanceUnit());
+    if (!Number.isInteger(reps) || reps < 1 || meters === null) {
+      return waterError(distanceUnit() === 'km'
+        ? 'Укажи дистанцию в километрах, например 2 или 0,5.'
+        : 'Укажи дистанцию в метрах, например 500.');
     }
     waterError('');
     state.water.segments.push({ name: form.elements.namedItem('name').value.trim(), reps, meters });
     form.reset();
     updateWater();
-    form.meters.focus();
+    form.distance.focus();
   }
 });
 

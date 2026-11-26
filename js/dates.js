@@ -59,10 +59,21 @@ export function formatTime(sec) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
-// метры -> "11" или "11,5" (км)
+// метры -> "11", "11,5" или "1,25" (км). Лишние нули в конце убираем
 export function formatKm(meters) {
   const km = meters / 1000;
-  return Number.isInteger(km) ? String(km) : km.toFixed(1).replace('.', ',');
+  return Number.isInteger(km) ? String(km) : km.toFixed(2).replace(/0+$/, '').replace('.', ',');
+}
+
+// Дистанция отрезка: до километра — в метрах, дальше — в километрах. 500 -> "500 м", 2000 -> "2 км"
+export const formatDistance = (meters) => (meters < 1000 ? `${meters} м` : `${formatKm(meters)} км`);
+
+// Ввод пользователя -> метры. Понимает запятую: "0,5" км -> 500. Ошибка -> null
+export function parseDistance(value, unit) {
+  const num = Number(String(value).trim().replace(',', '.'));
+  if (!Number.isFinite(num) || num <= 0) return null;
+  const meters = Math.round(unit === 'km' ? num * 1000 : num);
+  return meters > 0 && meters <= 100000 ? meters : null;
 }
 
 // Русские окончания: 1 тренировка, 2 тренировки, 5 тренировок
