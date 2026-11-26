@@ -1,17 +1,11 @@
-// Хранилище данных.
-// В Telegram — CloudStorage: у каждого пользователя своё, синхронизируется между устройствами.
-// В обычном браузере (когда разрабатываем) — localStorage.
-// Остальной код не знает, какое хранилище работает: он вызывает только loadAll / save.
-
 const tg = window.Telegram?.WebApp;
 
-// initData пустой, если страница открыта не из Telegram
 const useCloud = Boolean(tg?.initData && tg.isVersionAtLeast?.('6.9'));
 
 const LOCAL_PREFIX = 'rt_';
-const MAX_VALUE_LENGTH = 4096; // лимит Telegram на одно значение
+const MAX_VALUE_LENGTH = 4096;
 
-// CloudStorage работает через колбэки. Оборачиваем в Promise, чтобы писать await
+// CloudStorage работает на колбэках. Оборачиваем в Promise, чтобы писать await
 function cloud(method, ...args) {
   return new Promise((resolve, reject) => {
     tg.CloudStorage[method](...args, (error, result) => (error ? reject(new Error(error)) : resolve(result)));
@@ -26,7 +20,7 @@ function parse(raw) {
   }
 }
 
-// Загружает всё сразу: { "profile": {...}, "2026-10": {...}, ... }
+// Загружает все ключи разом. В Telegram — из CloudStorage, в обычном браузере — из localStorage
 export async function loadAll() {
   const result = {};
 
@@ -47,7 +41,7 @@ export async function loadAll() {
   return result;
 }
 
-// Сохраняет значение по ключу. null или пустой объект — удаляет ключ
+// Сохраняет значение по ключу. Пустое значение удаляет ключ. Лимит Telegram — 4096 символов на значение
 export async function save(key, data) {
   const isEmpty = data === null || Object.keys(data).length === 0;
 

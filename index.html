@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Гребля — трекер тренировок</title>
-<!-- Скрипт Telegram: даёт объект window.Telegram.WebApp (имя пользователя, CloudStorage, кнопка «Назад») -->
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -12,7 +11,6 @@
 </head>
 <body>
 
-<!-- Иконки объявлены один раз, используются через <use href="#i-..."> -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
@@ -24,7 +22,6 @@
     <symbol id="i-next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
-    <!-- Скрещённые вёсла: два древка, лопасти (повёрнутые эллипсы) и рукоятки -->
     <symbol id="i-oars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4.5 19.5 16 8M19.5 19.5 8 8"/>
       <ellipse cx="18.2" cy="5.8" rx="1.9" ry="3.6" transform="rotate(45 18.2 5.8)"/>
@@ -35,7 +32,6 @@
   </defs>
 </svg>
 
-<!-- Экраны. Содержимое рисует js/app.js, здесь только контейнеры -->
 <main class="app">
   <section class="view no-tabbar" id="view-welcome" hidden></section>
   <section class="view" id="view-today" hidden></section>

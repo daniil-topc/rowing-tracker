@@ -1,5 +1,3 @@
-// Главный файл: состояние приложения, отрисовка экранов и обработка нажатий.
-
 import {
   today, addDays, sameDay, mondayIndex, monthKey, toISO, fromISO,
   formatLong, capitalize, parseTime, formatTime, formatKm, formatDistance, parseDistance,
@@ -19,25 +17,22 @@ const TABS = ['today', 'calendar', 'stats'];
 const PROFILE_KEY = 'profile';
 const MONTH_KEY = /^\d{4}-\d{2}$/;
 
-// ---------- Состояние ----------
-// Всё, что меняется, лежит в одном объекте. Экран всегда рисуется из state.
 const state = {
-  profile: null,         // { name: "Даня", unit: "km" }
-  db: {},                // тренировки по месяцам (формат описан в stats.js)
+  profile: null,
+  db: {},
   view: 'today',
-  history: [],           // стек экранов для кнопки «Назад»
-  calMonth: null,        // первый день месяца, открытого в календаре
-  statsPeriod: 'month',  // 'week' | 'month' | 'year'
-  dayDate: null,         // дата, открытая на экране «День»
-  editing: false,        // карточка отметки показывает вопрос, даже если день уже отмечен
-  pickedType: null,      // что выбрано в переключателе: 'w' (вода) | 'g' (зал)
-  water: null,           // черновик тренировки на воде: { date, time, segments, justAdded }
-  nav: 'tab',            // как пришли на экран: 'tab' | 'push' (вперёд) | 'pop' (назад) — для анимации
-  flash: null,           // что подсветить анимацией при следующей отрисовке (дата отметки, 'edit', 'cal-next'...)
+  history: [],
+  calMonth: null,
+  statsPeriod: 'month',
+  dayDate: null,
+  editing: false,
+  pickedType: null,
+  water: null,
+  nav: 'tab',
+  flash: null,
 };
 
-// ---------- Утилиты ----------
-// Экранируем всё, что ввёл пользователь, перед вставкой в innerHTML (защита от XSS)
+// Экранирует ввод пользователя перед вставкой в innerHTML (защита от XSS)
 function escapeHtml(str) {
   const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   return String(str).replace(/[&<>"']/g, (ch) => map[ch]);
@@ -54,7 +49,6 @@ function showToast(text) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
-// Вибрация в Telegram: «успех» после сохранения и лёгкий щелчок при переключениях
 function haptic() {
   if (tg?.isVersionAtLeast?.('6.1')) tg.HapticFeedback.notificationOccurred('success');
 }
@@ -62,14 +56,14 @@ function tick() {
   if (tg?.isVersionAtLeast?.('6.1')) tg.HapticFeedback.selectionChanged();
 }
 
-// Перезапуск CSS-анимации: убрать класс, заставить браузер это заметить (reflow), вернуть класс
+// Перезапускает CSS-анимацию: снять класс, вызвать reflow, вернуть класс
 function replay(el, className) {
   el.classList.remove(className);
   void el.offsetWidth;
   el.classList.add(className);
 }
 
-// Переключатель со скользящей подложкой: двигаем её через CSS-переменную, без перерисовки
+// Двигает подложку переключателя через CSS-переменную --index, без перерисовки экрана
 function moveSegment(btn) {
   const group = btn.parentElement;
   const buttons = [...group.querySelectorAll('button')];
@@ -77,18 +71,18 @@ function moveSegment(btn) {
   group.style.setProperty('--index', buttons.indexOf(btn));
 }
 
-// ---------- Сохранение ----------
+// Сохраняет отметку дня: сначала в хранилище, потом в state.
+// Если сохранение упадёт, на экране не появится отметка, которой нет в данных
 async function setRecord(date, rec) {
   const key = monthKey(date);
   const month = { ...(state.db[key] || {}) };
   if (rec) month[date.getDate()] = rec;
   else delete month[date.getDate()];
 
-  await save(key, month);  // сначала сохраняем, потом обновляем state:
-  state.db[key] = month;   // если сохранение упадёт, на экране не будет «фантомной» отметки
+  await save(key, month);
+  state.db[key] = month;
 }
 
-// ---------- Навигация ----------
 function go(view) {
   state.history.push(state.view);
   state.view = view;
@@ -118,14 +112,13 @@ function resetMark() {
   state.pickedType = null;
 }
 
-// ---------- Общие куски разметки ----------
 function dayClass(date) {
   const rec = getRecord(state.db, date);
   const classes = [];
   if (rec) classes.push({ w: 'water', g: 'gym', x: 'missed' }[rec.t]);
   if (sameDay(date, today())) classes.push('today');
   if (date > today()) classes.push('future');
-  if (state.flash === toISO(date)) classes.push('pop');  // только что отметили этот день
+  if (state.flash === toISO(date)) classes.push('pop');
   return classes.join(' ');
 }
 
@@ -134,8 +127,7 @@ function dayButton(date) {
   return `<button class="day ${dayClass(date)}" data-action="open-day" data-date="${toISO(date)}" ${disabled}>${date.getDate()}</button>`;
 }
 
-// Какой тип выбран в переключателе Вода/Зал:
-// 1) то, что пользователь нажал сам  2) тип уже сохранённой отметки  3) текущий сезон
+// Что выбрано в «Вода/Зал»: нажатое пользователем → тип сохранённой отметки → текущий сезон
 function selectedType(date) {
   if (state.pickedType) return state.pickedType;
   const rec = getRecord(state.db, date);
@@ -143,15 +135,13 @@ function selectedType(date) {
   return detectSeason(state.db, date);
 }
 
-// Дата, которую сейчас отмечаем: сегодня или день, открытый из календаря
 const markDate = () => (state.view === 'day' ? state.dayDate : today());
 
 function markCard(date) {
   const rec = getRecord(state.db, date);
   const isToday = sameDay(date, today());
-  const pop = state.flash ? 'pop' : '';  // карточка сменилась — показываем её с анимацией
+  const pop = state.flash ? 'pop' : '';
 
-  // День уже отмечен — показываем результат
   if (rec && !state.editing) {
     const text = { w: `Вода · ${formatKm(recordMeters(rec))} км`, g: 'Зал', x: 'Пропуск' }[rec.t];
     const cls = { w: 'water', g: 'gym', x: 'missed' }[rec.t];
@@ -165,7 +155,6 @@ function markCard(date) {
       </div>`;
   }
 
-  // Иначе — вопрос
   const type = selectedType(date);
   return `
     <div class="card question ${pop}">
@@ -193,7 +182,6 @@ function topbar(title, caption) {
     </header>`;
 }
 
-// ---------- Экраны ----------
 function renderWelcome(el) {
   const suggested = state.profile?.name || tg?.initDataUnsafe?.user?.first_name || '';
   el.classList.add('welcome');
@@ -305,8 +293,7 @@ function renderCalendar(el) {
 
 const PERIODS = [['week', 'Неделя'], ['month', 'Месяц'], ['year', 'Год']];
 
-// Четыре карточки с цифрами за выбранный период. Отдельная функция — чтобы при смене
-// периода обновлять только их, а не весь экран (график тогда не перерисовывается заново)
+// Карточки с цифрами вынесены отдельно: при смене периода обновляются только они, график не трогаем
 function statCards() {
   const t = today();
   const from = {
@@ -353,7 +340,6 @@ function renderStats(el) {
     </div>`;
 }
 
-// --- Тренировка на воде ---
 function openWater(date) {
   const rec = getRecord(state.db, date);
   const isWater = rec?.t === 'w';
@@ -365,7 +351,6 @@ function openWater(date) {
   go('water');
 }
 
-// Единица ввода дистанции: 'km' или 'm'. Хранится в профиле, по умолчанию километры
 const distanceUnit = () => state.profile?.unit || 'km';
 const UNIT_LABEL = { km: 'км', m: 'м' };
 
@@ -411,7 +396,8 @@ function renderWater(el) {
   updateWater();
 }
 
-// Обновляем только то, что зависит от данных, — чтобы не терять фокус в полях ввода
+// Обновляет только итог, темп и список отрезков, чтобы поля ввода не теряли фокус.
+// Темп на 500 м = время / (метры / 500)
 function updateWater() {
   const w = state.water;
   const meters = w.segments.reduce((sum, s) => sum + s.reps * s.meters, 0);
@@ -421,7 +407,6 @@ function updateWater() {
   const newTotal = formatKm(meters);
   if (total.textContent !== newTotal && total.textContent !== '0') replay(total, 'pulse');
   total.textContent = newTotal;
-  // Темп на 500 м = время / количество отрезков по 500 м
   $('#w-pace').textContent = seconds && meters ? formatTime(Math.round(seconds / (meters / 500))) : '—';
 
   $('#w-list').innerHTML = w.segments.length
@@ -458,7 +443,6 @@ async function saveWater() {
   back();
 }
 
-// ---------- Главная отрисовка ----------
 const RENDERERS = {
   welcome: renderWelcome, today: renderToday, calendar: renderCalendar,
   stats: renderStats, day: renderDay, water: renderWater,
@@ -467,8 +451,7 @@ const RENDERERS = {
 let shownView = null;
 let enterTimer;
 
-// Анимация входа на экран. Класс снимаем после анимации, иначе при следующей
-// перерисовке (например, после отметки) новые элементы снова начнут «выезжать»
+// Анимация входа на экран. Класс снимаем после анимации, иначе она повторится при следующей перерисовке
 function playEnter(el) {
   const cls = `enter-${state.nav}`;
   el.classList.remove('enter-tab', 'enter-push', 'enter-pop');
@@ -478,6 +461,7 @@ function playEnter(el) {
   enterTimer = setTimeout(() => el.classList.remove(cls), 700);
 }
 
+// Главная отрисовка: рисует текущий экран из state. Анимация входа — только при смене экрана
 function render() {
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== state.view;
   const isTab = TABS.includes(state.view);
@@ -487,24 +471,19 @@ function render() {
   const el = $(`#view-${state.view}`);
   RENDERERS[state.view](el);
 
-  // Анимируем только смену экрана, а не каждую перерисовку
   if (shownView !== state.view) playEnter(el);
   shownView = state.view;
   state.flash = null;
 
-  // Системная кнопка «Назад» в шапке Telegram
   if (tg?.isVersionAtLeast?.('6.1')) {
     const needBack = !isTab && state.history.length > 0;
     needBack ? tg.BackButton.show() : tg.BackButton.hide();
   }
 }
 
-// ---------- Обработчики ----------
-// Один обработчик на весь документ (делегирование): кнопки перерисовываются, а он остаётся
 const actions = {
   back,
   'edit-name': () => go('welcome'),
-  // Без render(): только двигаем подложку, иначе анимация не успеет сыграть
   'pick-type': (btn) => {
     if (btn.classList.contains('on')) return;
     state.pickedType = btn.dataset.type;
@@ -516,7 +495,7 @@ const actions = {
     const yes = btn.dataset.yes === '1';
     const type = selectedType(date);
 
-    if (yes && type === 'w') return openWater(date);  // для воды сначала подробности
+    if (yes && type === 'w') return openWater(date);
 
     await setRecord(date, { t: yes ? 'g' : 'x' });
     haptic();
@@ -560,8 +539,8 @@ const actions = {
     replay(cards, 'swap');
     tick();
   },
-  // Сначала строка уезжает (анимация), потом удаляем её из данных.
-  // Запоминаем сам объект, а не номер: номера могут сдвинуться, если удалять быстро несколько строк
+  // Сначала строка уезжает, потом удаляем её из данных. Ищем по самому объекту, а не по номеру:
+  // при быстром удалении нескольких строк номера сдвигаются
   'remove-seg': (btn) => {
     const row = btn.closest('.seg');
     if (row.classList.contains('row-out')) return;
@@ -576,10 +555,9 @@ const actions = {
     };
     row.classList.add('row-out');
     row.addEventListener('animationend', finish, { once: true });
-    setTimeout(finish, 300);  // запасной вариант, если animationend не придёт
+    setTimeout(finish, 300);
   },
   'save-water': saveWater,
-  // Меняем только кнопку и подсказку в поле, чтобы не сбросить уже введённое
   'toggle-unit': async (btn) => {
     const unit = distanceUnit() === 'km' ? 'm' : 'km';
     const profile = { ...state.profile, unit };
@@ -588,10 +566,11 @@ const actions = {
     replay(btn, 'pulse');
     tick();
     $('#seg-form').distance.placeholder = unit === 'km' ? '0,5' : '500';
-    await save(PROFILE_KEY, profile);  // запоминаем выбор для следующих тренировок
+    await save(PROFILE_KEY, profile);
   },
 };
 
+// Один обработчик кликов на весь документ (делегирование): кнопки перерисовываются, а он остаётся
 document.addEventListener('click', async (event) => {
   const btn = event.target.closest('[data-action], [data-tab]');
   if (!btn || btn.disabled) return;
@@ -611,9 +590,7 @@ document.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.target;
 
-  // Имя
   if (form.id === 'name-form') {
-    // form.name — это атрибут name самой формы, поэтому поле берём через elements
     const name = form.elements.namedItem('name').value.trim();
     const error = $('#name-error');
     if (!name) {
@@ -633,7 +610,6 @@ document.addEventListener('submit', async (event) => {
     return;
   }
 
-  // Новый отрезок
   if (form.id === 'seg-form') {
     const reps = Number(form.reps.value);
     const meters = parseDistance(form.distance.value, distanceUnit());
@@ -644,7 +620,7 @@ document.addEventListener('submit', async (event) => {
     }
     waterError('');
     state.water.segments.push({ name: form.elements.namedItem('name').value.trim(), reps, meters });
-    state.water.justAdded = state.water.segments.length - 1;  // эту строку покажем с анимацией
+    state.water.justAdded = state.water.segments.length - 1;
     form.reset();
     updateWater();
     form.distance.focus();
@@ -658,7 +634,7 @@ document.addEventListener('input', (event) => {
   }
 });
 
-// ---------- Запуск ----------
+// Запуск: настройка Telegram, загрузка данных, при первом запуске — экран с вопросом об имени
 async function init() {
   if (tg) {
     tg.ready();
@@ -684,7 +660,6 @@ async function init() {
     showToast('Не удалось загрузить данные');
   }
 
-  // Первый запуск — спрашиваем имя
   state.view = state.profile?.name ? 'today' : 'welcome';
   render();
 }
