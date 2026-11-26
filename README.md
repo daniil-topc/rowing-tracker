@@ -11,7 +11,8 @@
 - Серия тренировок подряд и лучшая серия
 
 ## Стек
-HTML, CSS, JavaScript (ES-модули), Telegram Mini Apps API. Без фреймворков и без сервера.
+HTML, CSS, JavaScript (ES-модули), Telegram Mini Apps API, Cloudflare Workers. Без фреймворков.
+Своего сервера нет: приложение — статика на GitHub Pages, бот — один Cloudflare Worker без базы и без токена в коде.
 
 ## Как хранятся данные
 - В Telegram — `Telegram.WebApp.CloudStorage`: у каждого пользователя своё хранилище, синхронизируется между устройствами.
@@ -26,6 +27,7 @@ js/app.js         — состояние, отрисовка экранов, о�
 js/storage.js     — CloudStorage / localStorage
 js/stats.js       — серии, посещаемость, километры, сезон
 js/dates.js       — даты и форматирование
+bot/worker.js     — бот: приветствие на /start с кнопкой «Открыть трекер»
 ```
 
 ## Запуск локально
@@ -38,3 +40,13 @@ python -m http.server 5500
 1. Выложить папку на GitHub Pages (нужен HTTPS).
 2. В @BotFather: `/newbot` — создать бота.
 3. В @BotFather: настройки бота → Mini App / Menu Button → указать ссылку на GitHub Pages.
+
+## Приветствие на /start
+Telegram присылает каждое сообщение боту на webhook (POST с JSON). Воркер отвечает на этот запрос JSON-ом
+с `method: "sendMessage"`, и Telegram сам отправляет сообщение. Поэтому воркеру не нужен токен.
+
+1. Cloudflare → Workers & Pages → создать Worker → вставить код из `bot/worker.js` → Deploy.
+   Получится адрес вида `https://<имя>.<аккаунт>.workers.dev`.
+2. Один раз подключить webhook: открыть в браузере
+   `https://api.telegram.org/bot<ТОКЕН>/setWebhook?url=<адрес воркера>`. Ответ должен быть `"ok":true`.
+3. Написать боту `/start`.
