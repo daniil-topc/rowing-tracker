@@ -52,6 +52,13 @@ export function formatTime(sec) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
+// Длительность отрезка: 600 → "10 мин", 30 → "30 сек", 90 → "1:30"
+export function formatDuration(sec) {
+  if (sec < 60) return `${sec} сек`;
+  if (sec % 60 === 0) return `${sec / 60} мин`;
+  return formatTime(sec);
+}
+
 export function formatKm(meters) {
   const km = meters / 1000;
   return Number.isInteger(km) ? String(km) : km.toFixed(2).replace(/0+$/, '').replace('.', ',');

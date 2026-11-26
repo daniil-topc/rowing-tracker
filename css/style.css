@@ -153,7 +153,10 @@ button:disabled { cursor: default; }
 .icon-x:active { transform: scale(.85); color: var(--missed); }
 .empty { color: var(--dim); font-size: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
 .seg-form { display: grid; grid-template-columns: 52px auto 1fr 48px 40px; gap: 8px 6px; align-items: center; padding: 12px 0; }
-.seg-form input[name="name"] { grid-column: 1 / -1; }
+.seg-form input[name="name"], .seg-form .segmented { grid-column: 1 / -1; }
+.seg-form .time-field { display: none; grid-column: 3 / -1; }
+.seg-form.time .time-field { display: block; animation: rise var(--base) var(--ease); }
+.seg-form.time input[name="distance"] { grid-column: 1 / 4; }
 .seg-form .x { text-align: center; }
 .unit-btn, .add-btn { transition: transform var(--fast) var(--ease), filter var(--base) var(--ease), border-color var(--base) var(--ease); }
 .unit-btn:active, .add-btn:active { transform: scale(.9); }

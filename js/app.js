@@ -1,6 +1,6 @@
 import {
   today, addDays, sameDay, mondayIndex, monthKey, toISO, fromISO,
-  formatLong, capitalize, parseTime, formatTime, formatKm, formatDistance, parseDistance,
+  formatLong, capitalize, parseTime, formatTime, formatDuration, formatKm, formatDistance, parseDistance,
   plural, MONTHS, WD_SHORT,
 } from './dates.js';
 import { loadAll, save } from './storage.js';
@@ -143,7 +143,9 @@ function markCard(date) {
   const pop = state.flash ? 'pop' : '';
 
   if (rec && !state.editing) {
-    const text = { w: `Вода · ${formatKm(recordMeters(rec))} км`, g: 'Зал', x: 'Пропуск' }[rec.t];
+    const meters = recordMeters(rec);
+    const water = meters ? `Вода · ${formatKm(meters)} км` : 'Вода';
+    const text = { w: water, g: 'Зал', x: 'Пропуск' }[rec.t];
     const cls = { w: 'water', g: 'gym', x: 'missed' }[rec.t];
     return `
       <div class="card row ${pop}">
@@ -346,18 +348,29 @@ function openWater(date) {
   state.water = {
     date,
     time: isWater && rec.s ? formatTime(rec.s) : '',
-    segments: isWater ? rec.g.map(([name, reps, meters]) => ({ name, reps, meters })) : [],
+    segments: isWater ? rec.g.map(([name, reps, meters, seconds = 0]) => ({ name, reps, meters, seconds })) : [],
   };
   go('water');
 }
 
 const distanceUnit = () => state.profile?.unit || 'km';
+const segMode = () => state.profile?.segMode || 'dist';
 const UNIT_LABEL = { km: 'км', m: 'м' };
 
-function segmentTitle({ name, reps, meters }) {
-  const distance = reps > 1 ? `${reps} × ${formatDistance(meters)}` : formatDistance(meters);
-  return name ? `${name} · ${distance}` : distance;
+function distancePlaceholder() {
+  if (segMode() === 'time') return 'Дистанция (необяз.)';
+  return distanceUnit() === 'km' ? '0,5' : '500';
 }
+
+// Название отрезка: "4 × 500 м", "4 × 10 мин" или "4 × 10 мин по 2,6 км"
+function segmentTitle({ name, reps, meters, seconds }) {
+  const amount = seconds ? formatDuration(seconds) : formatDistance(meters);
+  let text = reps > 1 ? `${reps} × ${amount}` : amount;
+  if (seconds && meters) text += `${reps > 1 ? ' по ' : ' · '}${formatDistance(meters)}`;
+  return name ? `${name} · ${text}` : text;
+}
+
+const segmentTotal = ({ reps, meters, seconds }) => (meters ? `${formatKm(reps * meters)} км` : formatDuration(reps * seconds));
 
 function renderWater(el) {
   const w = state.water;
@@ -380,11 +393,16 @@ function renderWater(el) {
       <p class="caption">Отрезки</p>
       <div class="card segments">
         <div id="w-list"></div>
-        <form class="seg-form" id="seg-form" autocomplete="off">
+        <form class="seg-form ${segMode() === 'time' ? 'time' : ''}" id="seg-form" autocomplete="off">
+          <div class="segmented" style="--count:2;--index:${segMode() === 'time' ? 1 : 0}">
+            <button type="button" class="${segMode() === 'dist' ? 'on' : ''}" data-action="seg-mode" data-mode="dist">Дистанция</button>
+            <button type="button" class="${segMode() === 'time' ? 'on' : ''}" data-action="seg-mode" data-mode="time">Время</button>
+          </div>
           <input name="name" placeholder="Название (необязательно)" maxlength="20">
           <input name="reps" type="number" inputmode="numeric" min="1" max="50" value="1" aria-label="Повторы">
           <span class="x">×</span>
-          <input name="distance" inputmode="decimal" placeholder="${distanceUnit() === 'km' ? '0,5' : '500'}" aria-label="Дистанция">
+          <input class="time-field" name="seg-time" inputmode="numeric" placeholder="мм:сс" aria-label="Время отрезка">
+          <input name="distance" inputmode="decimal" placeholder="${distancePlaceholder()}" aria-label="Дистанция">
           <button class="unit-btn" type="button" data-action="toggle-unit" aria-label="Сменить единицу: км или метры">${UNIT_LABEL[distanceUnit()]}</button>
           <button class="add-btn" type="submit" aria-label="Добавить отрезок">${icon('plus', 18)}</button>
         </form>
@@ -397,27 +415,29 @@ function renderWater(el) {
 }
 
 // Обновляет только итог, темп и список отрезков, чтобы поля ввода не теряли фокус.
-// Темп на 500 м = время / (метры / 500)
+// Темп на 500 м = время / (метры / 500). Считаем его, только если у всех отрезков есть дистанция,
+// иначе часть времени придётся на неизвестные метры и темп выйдет неправильным
 function updateWater() {
   const w = state.water;
   const meters = w.segments.reduce((sum, s) => sum + s.reps * s.meters, 0);
   const seconds = parseTime(w.time);
+  const allHaveDistance = w.segments.every((s) => s.meters > 0);
 
   const total = $('#w-total');
   const newTotal = formatKm(meters);
   if (total.textContent !== newTotal && total.textContent !== '0') replay(total, 'pulse');
   total.textContent = newTotal;
-  $('#w-pace').textContent = seconds && meters ? formatTime(Math.round(seconds / (meters / 500))) : '—';
+  $('#w-pace').textContent = seconds && meters && allHaveDistance ? formatTime(Math.round(seconds / (meters / 500))) : '—';
 
   $('#w-list').innerHTML = w.segments.length
     ? w.segments.map((s, i) => `
         <div class="seg ${i === w.justAdded ? 'row-in' : ''}">
           <span>${escapeHtml(segmentTitle(s))}</span>
-          <span class="seg-right">${formatKm(s.reps * s.meters)} км
+          <span class="seg-right">${segmentTotal(s)}
             <button class="icon-x" data-action="remove-seg" data-index="${i}" aria-label="Удалить отрезок">${icon('close', 16)}</button>
           </span>
         </div>`).join('')
-    : '<p class="empty">Добавь отрезки: название, повторы × дистанция</p>';
+    : '<p class="empty">Добавь отрезки: повторы × дистанция или время</p>';
   w.justAdded = null;
 }
 
@@ -427,6 +447,8 @@ function waterError(text) {
   el.hidden = !text;
 }
 
+// Отрезок хранится массивом: [название, повторы, метры], а у отрезка по времени
+// в конце ещё секунды. Так старые записи читаются без изменений
 async function saveWater() {
   const w = state.water;
   if (w.segments.length === 0) return waterError('Добавь хотя бы один отрезок.');
@@ -434,7 +456,10 @@ async function saveWater() {
   const seconds = w.time.trim() ? parseTime(w.time) : null;
   if (w.time.trim() && !seconds) return waterError('Время в формате мм:сс или ч:мм:сс, например 58:40.');
 
-  const rec = { t: 'w', g: w.segments.map((s) => [s.name, s.reps, s.meters]) };
+  const rec = {
+    t: 'w',
+    g: w.segments.map((s) => (s.seconds ? [s.name, s.reps, s.meters, s.seconds] : [s.name, s.reps, s.meters])),
+  };
   if (seconds) rec.s = seconds;
 
   await setRecord(w.date, rec);
@@ -565,7 +590,20 @@ const actions = {
     btn.textContent = UNIT_LABEL[unit];
     replay(btn, 'pulse');
     tick();
-    $('#seg-form').distance.placeholder = unit === 'km' ? '0,5' : '500';
+    $('#seg-form').distance.placeholder = distancePlaceholder();
+    await save(PROFILE_KEY, profile);
+  },
+  // Поля формы меняются через класс, без перерисовки: уже введённое не сбрасывается
+  'seg-mode': async (btn) => {
+    if (btn.classList.contains('on')) return;
+    const profile = { ...state.profile, segMode: btn.dataset.mode };
+    state.profile = profile;
+    moveSegment(btn);
+    const form = $('#seg-form');
+    form.classList.toggle('time', profile.segMode === 'time');
+    form.distance.placeholder = distancePlaceholder();
+    waterError('');
+    tick();
     await save(PROFILE_KEY, profile);
   },
 };
@@ -611,19 +649,26 @@ document.addEventListener('submit', async (event) => {
   }
 
   if (form.id === 'seg-form') {
+    const isTime = segMode() === 'time';
     const reps = Number(form.reps.value);
-    const meters = parseDistance(form.distance.value, distanceUnit());
-    if (!Number.isInteger(reps) || reps < 1 || meters === null) {
+    const timeField = form.elements.namedItem('seg-time');
+    const seconds = isTime ? parseTime(timeField.value) : 0;
+    const distanceText = form.distance.value.trim();
+    const meters = isTime && !distanceText ? 0 : parseDistance(distanceText, distanceUnit());
+
+    if (!Number.isInteger(reps) || reps < 1) return waterError('Укажи количество повторов: 1 или больше.');
+    if (isTime && !seconds) return waterError('Время отрезка в формате мм:сс, например 10:00 или 0:30.');
+    if (meters === null) {
       return waterError(distanceUnit() === 'km'
         ? 'Укажи дистанцию в километрах, например 2 или 0,5.'
         : 'Укажи дистанцию в метрах, например 500.');
     }
     waterError('');
-    state.water.segments.push({ name: form.elements.namedItem('name').value.trim(), reps, meters });
+    state.water.segments.push({ name: form.elements.namedItem('name').value.trim(), reps, meters, seconds });
     state.water.justAdded = state.water.segments.length - 1;
     form.reset();
     updateWater();
-    form.distance.focus();
+    (isTime ? timeField : form.distance).focus();
   }
 });
 
