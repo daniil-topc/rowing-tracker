@@ -31,7 +31,9 @@ const state = {
   dayDate: null,         // дата, открытая на экране «День»
   editing: false,        // карточка отметки показывает вопрос, даже если день уже отмечен
   pickedType: null,      // что выбрано в переключателе: 'w' (вода) | 'g' (зал)
-  water: null,           // черновик тренировки на воде: { date, time, segments }
+  water: null,           // черновик тренировки на воде: { date, time, segments, justAdded }
+  nav: 'tab',            // как пришли на экран: 'tab' | 'push' (вперёд) | 'pop' (назад) — для анимации
+  flash: null,           // что подсветить анимацией при следующей отрисовке (дата отметки, 'edit', 'cal-next'...)
 };
 
 // ---------- Утилиты ----------
@@ -47,13 +49,32 @@ let toastTimer;
 function showToast(text) {
   const toast = $('#toast');
   toast.textContent = text;
-  toast.hidden = false;
+  toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (toast.hidden = true), 2500);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
+// Вибрация в Telegram: «успех» после сохранения и лёгкий щелчок при переключениях
 function haptic() {
   if (tg?.isVersionAtLeast?.('6.1')) tg.HapticFeedback.notificationOccurred('success');
+}
+function tick() {
+  if (tg?.isVersionAtLeast?.('6.1')) tg.HapticFeedback.selectionChanged();
+}
+
+// Перезапуск CSS-анимации: убрать класс, заставить браузер это заметить (reflow), вернуть класс
+function replay(el, className) {
+  el.classList.remove(className);
+  void el.offsetWidth;
+  el.classList.add(className);
+}
+
+// Переключатель со скользящей подложкой: двигаем её через CSS-переменную, без перерисовки
+function moveSegment(btn) {
+  const group = btn.parentElement;
+  const buttons = [...group.querySelectorAll('button')];
+  buttons.forEach((b) => b.classList.toggle('on', b === btn));
+  group.style.setProperty('--index', buttons.indexOf(btn));
 }
 
 // ---------- Сохранение ----------
@@ -71,12 +92,14 @@ async function setRecord(date, rec) {
 function go(view) {
   state.history.push(state.view);
   state.view = view;
+  state.nav = 'push';
   render();
   window.scrollTo(0, 0);
 }
 
 function back() {
   state.view = state.history.pop() || 'today';
+  state.nav = 'pop';
   resetMark();
   render();
 }
@@ -84,6 +107,7 @@ function back() {
 function switchTab(tab) {
   state.history = [];
   state.view = tab;
+  state.nav = 'tab';
   resetMark();
   render();
   window.scrollTo(0, 0);
@@ -101,6 +125,7 @@ function dayClass(date) {
   if (rec) classes.push({ w: 'water', g: 'gym', x: 'missed' }[rec.t]);
   if (sameDay(date, today())) classes.push('today');
   if (date > today()) classes.push('future');
+  if (state.flash === toISO(date)) classes.push('pop');  // только что отметили этот день
   return classes.join(' ');
 }
 
@@ -124,13 +149,14 @@ const markDate = () => (state.view === 'day' ? state.dayDate : today());
 function markCard(date) {
   const rec = getRecord(state.db, date);
   const isToday = sameDay(date, today());
+  const pop = state.flash ? 'pop' : '';  // карточка сменилась — показываем её с анимацией
 
   // День уже отмечен — показываем результат
   if (rec && !state.editing) {
     const text = { w: `Вода · ${formatKm(recordMeters(rec))} км`, g: 'Зал', x: 'Пропуск' }[rec.t];
     const cls = { w: 'water', g: 'gym', x: 'missed' }[rec.t];
     return `
-      <div class="card row">
+      <div class="card row ${pop}">
         <div>
           <p class="caption">${isToday ? 'Сегодня отмечено' : 'Отмечено'}</p>
           <p class="headline mark-status ${cls}">${text}</p>
@@ -142,9 +168,9 @@ function markCard(date) {
   // Иначе — вопрос
   const type = selectedType(date);
   return `
-    <div class="card question">
+    <div class="card question ${pop}">
       <h2 class="headline">${isToday ? 'Была тренировка сегодня?' : 'Была тренировка в этот день?'}</h2>
-      <div class="segmented">
+      <div class="segmented" style="--count:2;--index:${type === 'w' ? 0 : 1}">
         <button class="${type === 'w' ? 'on' : ''}" data-action="pick-type" data-type="w">${icon('water', 16)}Вода</button>
         <button class="${type === 'g' ? 'on' : ''}" data-action="pick-type" data-type="g">${icon('gym', 16)}Зал</button>
       </div>
@@ -201,7 +227,7 @@ function renderToday(el) {
     <div class="card streak">
       <div>
         <p class="caption">Текущая серия</p>
-        <p class="streak-num">${streak}<small>${plural(streak, ['тренировка', 'тренировки', 'тренировок'])} подряд</small></p>
+        <p class="streak-num ${state.flash && state.flash !== 'edit' ? 'bump' : ''}">${streak}<small>${plural(streak, ['тренировка', 'тренировки', 'тренировок'])} подряд</small></p>
         <p class="caption">Лучшая серия: ${best}</p>
       </div>
       <svg class="flame"><use href="#i-flame"/></svg>
@@ -261,8 +287,8 @@ function renderCalendar(el) {
       </div>
     </div>
 
-    <div class="card" style="padding:16px 10px">
-      <div class="grid">
+    <div class="card" style="padding:16px 10px;overflow:hidden">
+      <div class="grid ${{ 'cal-next': 'slide-next', 'cal-prev': 'slide-prev' }[state.flash] || ''}">
         ${WD_SHORT.map((d) => `<p class="wd">${d}</p>`).join('')}
         ${cells.join('')}
       </div>
@@ -277,7 +303,11 @@ function renderCalendar(el) {
     <div class="card">${summary}</div>`;
 }
 
-function renderStats(el) {
+const PERIODS = [['week', 'Неделя'], ['month', 'Месяц'], ['year', 'Год']];
+
+// Четыре карточки с цифрами за выбранный период. Отдельная функция — чтобы при смене
+// периода обновлять только их, а не весь экран (график тогда не перерисовывается заново)
+function statCards() {
   const t = today();
   const from = {
     week: addDays(t, -mondayIndex(t)),
@@ -285,26 +315,28 @@ function renderStats(el) {
     year: new Date(t.getFullYear(), 0, 1),
   }[state.statsPeriod];
   const sum = summarize(recordsBetween(state.db, from, t));
+  return `
+    <div class="stat"><span class="caption">Всего тренировок</span><b>${sum.done}</b></div>
+    <div class="stat"><span class="caption">Посещаемость</span><b style="color:var(--accent)">${sum.rate === null ? '—' : sum.rate + '%'}</b></div>
+    <div class="stat"><span class="caption">На воде</span><b style="color:var(--water)">${sum.water}<small>· ${formatKm(sum.waterMeters)} км</small></b></div>
+    <div class="stat"><span class="caption">В зале</span><b>${sum.gym}</b></div>`;
+}
 
+function renderStats(el) {
+  const t = today();
   const months = metersByMonth(state.db, t, 7);
   const max = Math.max(...months.map((m) => m.meters));
   const bestMonth = max > 0 ? months.find((m) => m.meters === max).label.toLowerCase() : null;
-
-  const periods = [['week', 'Неделя'], ['month', 'Месяц'], ['year', 'Год']];
+  const index = PERIODS.findIndex(([id]) => id === state.statsPeriod);
 
   el.innerHTML = `
     <h1 class="title">Статистика</h1>
 
-    <div class="segmented on-surface">
-      ${periods.map(([id, label]) => `<button class="${state.statsPeriod === id ? 'on' : ''}" data-action="period" data-period="${id}">${label}</button>`).join('')}
+    <div class="segmented on-surface" style="--count:${PERIODS.length};--index:${index}">
+      ${PERIODS.map(([id, label]) => `<button class="${state.statsPeriod === id ? 'on' : ''}" data-action="period" data-period="${id}">${label}</button>`).join('')}
     </div>
 
-    <div class="stats">
-      <div class="stat"><span class="caption">Всего тренировок</span><b>${sum.done}</b></div>
-      <div class="stat"><span class="caption">Посещаемость</span><b style="color:var(--accent)">${sum.rate === null ? '—' : sum.rate + '%'}</b></div>
-      <div class="stat"><span class="caption">На воде</span><b style="color:var(--water)">${sum.water}<small>· ${formatKm(sum.waterMeters)} км</small></b></div>
-      <div class="stat"><span class="caption">В зале</span><b>${sum.gym}</b></div>
-    </div>
+    <div class="stats" id="stat-cards">${statCards()}</div>
 
     <div class="card">
       <div class="row">
@@ -312,10 +344,10 @@ function renderStats(el) {
         <p class="caption">${bestMonth ? 'Лучший: ' + bestMonth : 'Пока нет данных'}</p>
       </div>
       <div class="chart">
-        ${months.map((m) => {
+        ${months.map((m, i) => {
           const height = max > 0 ? Math.round((m.meters / max) * 100) : 0;
           const title = `${formatKm(m.meters)} км`;
-          return `<div class="bar ${m.meters === max && max > 0 ? 'max' : ''}" title="${title}"><i style="height:${height}%"></i><span>${m.label}</span></div>`;
+          return `<div class="bar ${m.meters === max && max > 0 ? 'max' : ''}" title="${title}" style="--i:${i}"><i style="height:${height}%"></i><span>${m.label}</span></div>`;
         }).join('')}
       </div>
     </div>`;
@@ -385,19 +417,23 @@ function updateWater() {
   const meters = w.segments.reduce((sum, s) => sum + s.reps * s.meters, 0);
   const seconds = parseTime(w.time);
 
-  $('#w-total').textContent = formatKm(meters);
+  const total = $('#w-total');
+  const newTotal = formatKm(meters);
+  if (total.textContent !== newTotal && total.textContent !== '0') replay(total, 'pulse');
+  total.textContent = newTotal;
   // Темп на 500 м = время / количество отрезков по 500 м
   $('#w-pace').textContent = seconds && meters ? formatTime(Math.round(seconds / (meters / 500))) : '—';
 
   $('#w-list').innerHTML = w.segments.length
     ? w.segments.map((s, i) => `
-        <div class="seg">
+        <div class="seg ${i === w.justAdded ? 'row-in' : ''}">
           <span>${escapeHtml(segmentTitle(s))}</span>
           <span class="seg-right">${formatKm(s.reps * s.meters)} км
             <button class="icon-x" data-action="remove-seg" data-index="${i}" aria-label="Удалить отрезок">${icon('close', 16)}</button>
           </span>
         </div>`).join('')
     : '<p class="empty">Добавь отрезки: название, повторы × дистанция</p>';
+  w.justAdded = null;
 }
 
 function waterError(text) {
@@ -418,6 +454,7 @@ async function saveWater() {
 
   await setRecord(w.date, rec);
   haptic();
+  state.flash = toISO(w.date);
   back();
 }
 
@@ -427,13 +464,33 @@ const RENDERERS = {
   stats: renderStats, day: renderDay, water: renderWater,
 };
 
+let shownView = null;
+let enterTimer;
+
+// Анимация входа на экран. Класс снимаем после анимации, иначе при следующей
+// перерисовке (например, после отметки) новые элементы снова начнут «выезжать»
+function playEnter(el) {
+  const cls = `enter-${state.nav}`;
+  el.classList.remove('enter-tab', 'enter-push', 'enter-pop');
+  void el.offsetWidth;
+  el.classList.add(cls);
+  clearTimeout(enterTimer);
+  enterTimer = setTimeout(() => el.classList.remove(cls), 700);
+}
+
 function render() {
   for (const v of VIEWS) $(`#view-${v}`).hidden = v !== state.view;
   const isTab = TABS.includes(state.view);
-  $('#tabbar').hidden = !isTab;
+  $('#tabbar').classList.toggle('away', !isTab);
   document.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('on', tab.dataset.tab === state.view));
 
-  RENDERERS[state.view]($(`#view-${state.view}`));
+  const el = $(`#view-${state.view}`);
+  RENDERERS[state.view](el);
+
+  // Анимируем только смену экрана, а не каждую перерисовку
+  if (shownView !== state.view) playEnter(el);
+  shownView = state.view;
+  state.flash = null;
 
   // Системная кнопка «Назад» в шапке Telegram
   if (tg?.isVersionAtLeast?.('6.1')) {
@@ -447,9 +504,12 @@ function render() {
 const actions = {
   back,
   'edit-name': () => go('welcome'),
+  // Без render(): только двигаем подложку, иначе анимация не успеет сыграть
   'pick-type': (btn) => {
+    if (btn.classList.contains('on')) return;
     state.pickedType = btn.dataset.type;
-    render();
+    moveSegment(btn);
+    tick();
   },
   answer: async (btn) => {
     const date = markDate();
@@ -461,15 +521,19 @@ const actions = {
     await setRecord(date, { t: yes ? 'g' : 'x' });
     haptic();
     resetMark();
+    state.flash = toISO(date);
     render();
   },
   'edit-mark': () => {
     state.editing = true;
+    state.flash = 'edit';
     render();
   },
   'delete-mark': async () => {
-    await setRecord(markDate(), null);
+    const date = markDate();
+    await setRecord(date, null);
     resetMark();
+    state.flash = toISO(date);
     render();
   },
   'open-day': (btn) => {
@@ -480,17 +544,39 @@ const actions = {
     go('day');
   },
   'cal-move': (btn) => {
+    const step = Number(btn.dataset.step);
     const m = state.calMonth;
-    state.calMonth = new Date(m.getFullYear(), m.getMonth() + Number(btn.dataset.step), 1);
+    state.calMonth = new Date(m.getFullYear(), m.getMonth() + step, 1);
+    state.flash = step > 0 ? 'cal-next' : 'cal-prev';
     render();
+    tick();
   },
   period: (btn) => {
+    if (btn.classList.contains('on')) return;
     state.statsPeriod = btn.dataset.period;
-    render();
+    moveSegment(btn);
+    const cards = $('#stat-cards');
+    cards.innerHTML = statCards();
+    replay(cards, 'swap');
+    tick();
   },
+  // Сначала строка уезжает (анимация), потом удаляем её из данных.
+  // Запоминаем сам объект, а не номер: номера могут сдвинуться, если удалять быстро несколько строк
   'remove-seg': (btn) => {
-    state.water.segments.splice(Number(btn.dataset.index), 1);
-    updateWater();
+    const row = btn.closest('.seg');
+    if (row.classList.contains('row-out')) return;
+    const segment = state.water.segments[Number(btn.dataset.index)];
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      const index = state.water.segments.indexOf(segment);
+      if (index !== -1) state.water.segments.splice(index, 1);
+      updateWater();
+    };
+    row.classList.add('row-out');
+    row.addEventListener('animationend', finish, { once: true });
+    setTimeout(finish, 300);  // запасной вариант, если animationend не придёт
   },
   'save-water': saveWater,
   // Меняем только кнопку и подсказку в поле, чтобы не сбросить уже введённое
@@ -499,6 +585,8 @@ const actions = {
     const profile = { ...state.profile, unit };
     state.profile = profile;
     btn.textContent = UNIT_LABEL[unit];
+    replay(btn, 'pulse');
+    tick();
     $('#seg-form').distance.placeholder = unit === 'km' ? '0,5' : '500';
     await save(PROFILE_KEY, profile);  // запоминаем выбор для следующих тренировок
   },
@@ -507,7 +595,10 @@ const actions = {
 document.addEventListener('click', async (event) => {
   const btn = event.target.closest('[data-action], [data-tab]');
   if (!btn || btn.disabled) return;
-  if (btn.dataset.tab) return switchTab(btn.dataset.tab);
+  if (btn.dataset.tab) {
+    if (btn.dataset.tab !== state.view) tick();
+    return switchTab(btn.dataset.tab);
+  }
 
   try {
     await actions[btn.dataset.action]?.(btn);
@@ -553,6 +644,7 @@ document.addEventListener('submit', async (event) => {
     }
     waterError('');
     state.water.segments.push({ name: form.elements.namedItem('name').value.trim(), reps, meters });
+    state.water.justAdded = state.water.segments.length - 1;  // эту строку покажем с анимацией
     form.reset();
     updateWater();
     form.distance.focus();

@@ -11,12 +11,18 @@
   --missed: #F87171;
   --radius: 18px;
   --tabbar-h: 84px;
+
+  /* Движение. Анимируем только transform и opacity — их считает видеокарта, без лагов */
+  --ease: cubic-bezier(.22, 1, .36, 1);          /* быстро стартует, мягко останавливается */
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1); /* лёгкий перелёт, как пружинка */
+  --fast: .15s;
+  --base: .25s;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body { background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
 button, input { font: inherit; color: inherit; }
-button { background: none; border: 0; cursor: pointer; }
+button { background: none; border: 0; cursor: pointer; touch-action: manipulation; }
 button:disabled { cursor: default; }
 [hidden] { display: none !important; }
 
@@ -34,7 +40,8 @@ button:disabled { cursor: default; }
 .headline { font-size: 18px; font-weight: 600; letter-spacing: -0.2px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.link { color: var(--accent); font-size: 14px; font-weight: 500; padding: 6px 0; }
+.link { color: var(--accent); font-size: 14px; font-weight: 500; padding: 6px 0; transition: opacity var(--base) var(--ease); }
+.link:active { opacity: .6; }
 .link.muted { color: var(--muted); align-self: center; }
 
 /* Чип сезона */
@@ -43,7 +50,8 @@ button:disabled { cursor: default; }
 .season.water i { background: var(--water); }
 
 /* Приветствие и ввод имени */
-.greeting { text-align: left; display: flex; flex-direction: column; }
+.greeting { text-align: left; display: flex; flex-direction: column; transition: opacity var(--base) var(--ease); }
+.greeting:active { opacity: .6; }
 .welcome { justify-content: center; align-items: center; text-align: center; }
 .welcome .title { font-size: 32px; letter-spacing: -0.8px; }
 .welcome form { width: 100%; }
@@ -52,8 +60,9 @@ button:disabled { cursor: default; }
   width: 100%; height: 56px; padding: 0 18px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
   font-size: 18px; outline: none;
+  transition: border-color var(--base) var(--ease), box-shadow var(--base) var(--ease);
 }
-.name-input:focus { border-color: var(--accent); }
+.name-input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(74,222,128,.12); }
 .welcome .btn { flex: none; width: 100%; }
 
 /* Серия */
@@ -65,20 +74,42 @@ button:disabled { cursor: default; }
 /* Карточка отметки */
 .question { display: flex; flex-direction: column; gap: 16px; }
 .btns { display: flex; gap: 12px; }
-.btn { flex: 1; height: 56px; border-radius: 16px; font-weight: 600; font-size: 18px; }
+.btn {
+  flex: 1; height: 56px; border-radius: 16px; font-weight: 600; font-size: 18px;
+  transition: transform var(--fast) var(--ease), filter var(--base) var(--ease), border-color var(--base) var(--ease);
+}
 .btn-yes { background: var(--accent); color: var(--bg); }
 .btn-no { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-.btn:active { transform: scale(.98); }
+.btn:active { transform: scale(.97); filter: brightness(.92); }
 .mark-status { margin-top: 4px; }
 .mark-status.water { color: var(--water); }
 .mark-status.gym { color: var(--accent); }
 .mark-status.missed { color: var(--missed); }
 
-/* Переключатель */
-.segmented { display: flex; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 4px; }
+/* Переключатель со скользящей подложкой.
+   --count — сколько вариантов, --index — какой выбран (задаётся из JS).
+   Подложка — псевдоэлемент ::before, он едет через transform: translateX */
+.segmented {
+  position: relative; isolation: isolate;
+  display: flex; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 4px;
+}
+.segmented::before {
+  content: ""; position: absolute; z-index: -1;
+  top: 4px; bottom: 4px; left: 4px;
+  width: calc((100% - 8px) / var(--count, 2));
+  border-radius: 10px; background: var(--surface-2);
+  transform: translateX(calc(var(--index, 0) * 100%));
+  transition: transform .35s var(--ease);
+}
 .segmented.on-surface { background: var(--surface); }
-.segmented button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 0; font-size: 14px; font-weight: 500; color: var(--muted); border-radius: 10px; }
-.segmented button.on { background: var(--surface-2); color: var(--text); }
+.segmented button {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 0; font-size: 14px; font-weight: 500; color: var(--muted); border-radius: 10px;
+  transition: color var(--base) var(--ease);
+}
+.segmented button.on { color: var(--text); }
+.segmented button svg { transition: transform var(--base) var(--ease-spring); }
+.segmented button.on svg { transform: scale(1.12); }
 
 /* Дни */
 .week, .grid { display: grid; grid-template-columns: repeat(7, 1fr); }
@@ -90,7 +121,9 @@ button:disabled { cursor: default; }
   border-radius: 12px;
   display: grid; place-items: center;
   font-size: 14px; font-weight: 500; color: var(--muted);
+  transition: transform var(--fast) var(--ease), background-color var(--base) var(--ease), color var(--base) var(--ease);
 }
+.day:not(:disabled):active { transform: scale(.88); }
 .day.gym { background: var(--accent); color: var(--bg); }
 .day.water { background: var(--water); color: var(--bg); }
 .day.missed { background: rgba(248,113,113,.14); color: var(--missed); }
@@ -101,35 +134,50 @@ button:disabled { cursor: default; }
 
 /* Шапка вложенных экранов */
 .topbar { display: flex; align-items: center; gap: 14px; }
-.icon-btn { width: 36px; height: 36px; flex-shrink: 0; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; color: var(--muted); }
+.icon-btn {
+  width: 36px; height: 36px; flex-shrink: 0; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  display: grid; place-items: center; color: var(--muted);
+  transition: transform var(--fast) var(--ease), color var(--base) var(--ease), border-color var(--base) var(--ease), opacity var(--base) var(--ease);
+}
+.icon-btn:not(:disabled):active { transform: scale(.9); }
 .icon-btn:disabled { opacity: .35; }
 
 /* Тренировка на воде */
 .total { font-size: 52px; font-weight: 700; letter-spacing: -1.6px; line-height: 1; margin-top: 8px; }
+#w-total { display: inline-block; transform-origin: left bottom; } /* inline-block — чтобы работал transform */
 .total small { font-size: 18px; color: var(--muted); font-weight: 500; letter-spacing: 0; margin-left: 6px; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .metrics b { display: block; font-size: 18px; font-weight: 600; margin-bottom: 2px; line-height: 28px; }
 .time-input {
   width: 100%; background: transparent; border: 0; border-bottom: 1px dashed var(--dim);
   font-size: 18px; font-weight: 600; height: 28px; margin-bottom: 2px; outline: none;
+  transition: border-color var(--base) var(--ease);
 }
 .time-input:focus { border-bottom-color: var(--water); }
 .segments { padding: 4px 16px; margin-top: 10px; }
 .seg { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 15px; }
 .seg-right { display: flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap; }
-.icon-x { width: 28px; height: 28px; display: grid; place-items: center; color: var(--dim); border-radius: 8px; }
+.icon-x {
+  width: 28px; height: 28px; display: grid; place-items: center; color: var(--dim); border-radius: 8px;
+  transition: color var(--base) var(--ease), background-color var(--base) var(--ease), transform var(--fast) var(--ease);
+}
+.icon-x:active { transform: scale(.85); color: var(--missed); }
 .empty { color: var(--dim); font-size: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
 /* Строка 1: название на всю ширину. Строка 2: повторы × дистанция, единица, добавить */
 .seg-form { display: grid; grid-template-columns: 52px auto 1fr 48px 40px; gap: 8px 6px; align-items: center; padding: 12px 0; }
 .seg-form input[name="name"] { grid-column: 1 / -1; }
 .seg-form .x { text-align: center; }
+.unit-btn, .add-btn { transition: transform var(--fast) var(--ease), filter var(--base) var(--ease), border-color var(--base) var(--ease); }
+.unit-btn:active, .add-btn:active { transform: scale(.9); }
 .unit-btn { height: 40px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); font-size: 14px; font-weight: 500; color: var(--text); }
 .seg-form input {
   width: 100%; height: 40px; padding: 0 10px;
   background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
   font-size: 16px; outline: none; min-width: 0;
+  transition: border-color var(--base) var(--ease), box-shadow var(--base) var(--ease);
 }
-.seg-form input:focus { border-color: var(--water); }
+.seg-form input:focus { border-color: var(--water); box-shadow: 0 0 0 3px rgba(96,165,250,.14); }
 .seg-form .x { color: var(--muted); }
 .add-btn { width: 40px; height: 40px; border-radius: 10px; background: rgba(96,165,250,.14); color: var(--water); display: grid; place-items: center; }
 input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -145,6 +193,7 @@ input[type=number] { -moz-appearance: textfield; }
 .split b { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; margin-bottom: 2px; }
 
 /* Статистика */
+.stats-body { display: flex; flex-direction: column; gap: 20px; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 8px; }
 .stat b { font-size: 26px; font-weight: 600; letter-spacing: -0.6px; }
@@ -161,14 +210,100 @@ input[type=number] { -moz-appearance: textfield; }
   display: flex; justify-content: center;
   background: var(--bg); border-top: 1px solid var(--border);
   padding: 12px 8px calc(16px + env(safe-area-inset-bottom));
+  transition: transform .35s var(--ease), opacity var(--base) var(--ease), visibility 0s;
 }
-.tab { flex: 1; max-width: 160px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--dim); }
+/* Во вложенных экранах таб-бар уезжает вниз, а не пропадает рывком */
+.tabbar.away {
+  transform: translateY(100%); opacity: 0; visibility: hidden; pointer-events: none;
+  transition: transform .3s var(--ease), opacity var(--base) var(--ease), visibility 0s .3s;
+}
+.tab {
+  flex: 1; max-width: 160px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 500; color: var(--dim);
+  transition: color var(--base) var(--ease);
+}
 .tab.on { color: var(--text); }
-.tab svg { width: 22px; height: 22px; }
+.tab svg { width: 22px; height: 22px; transition: transform var(--base) var(--ease-spring); }
+.tab.on svg { transform: translateY(-2px); }
+.tab:active svg { transform: scale(.85); }
 
-/* Уведомление */
+/* Уведомление: выезжает снизу и плавно исчезает */
 .toast {
-  position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + 16px); transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + 16px);
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
   padding: 10px 16px; font-size: 14px; max-width: calc(100% - 40px);
+  opacity: 0; visibility: hidden; transform: translate(-50%, 12px);
+  transition: opacity var(--base) var(--ease), transform var(--base) var(--ease), visibility 0s var(--base);
+}
+.toast.show {
+  opacity: 1; visibility: visible; transform: translate(-50%, 0);
+  transition: opacity var(--base) var(--ease), transform var(--base) var(--ease), visibility 0s;
+}
+
+/* ---------- Ховеры: только там, где есть мышь (на телефоне :hover «залипает») ---------- */
+@media (hover: hover) {
+  .btn:hover { filter: brightness(1.08); }
+  .btn-no:hover { border-color: var(--dim); }
+  .link:hover, .greeting:hover { opacity: .75; }
+  .icon-btn:not(:disabled):hover { color: var(--text); border-color: var(--dim); }
+  .segmented button:not(.on):hover { color: var(--text); }
+  .day:not(:disabled):not(.gym):not(.water):not(.missed):hover { background: var(--surface-2); color: var(--text); }
+  .day.gym:not(:disabled):hover, .day.water:not(:disabled):hover { filter: brightness(1.1); }
+  .tab:not(.on):hover { color: var(--muted); }
+  .icon-x:hover { color: var(--missed); background: rgba(248,113,113,.1); }
+  .unit-btn:hover { border-color: var(--dim); }
+  .add-btn:hover { filter: brightness(1.3); }
+}
+
+/* ---------- Анимации ---------- */
+@keyframes rise      { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fromRight { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes fromLeft  { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes cardIn    { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes pop       { 0% { transform: scale(.75); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+@keyframes pulse     { 0% { transform: scale(1); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes grow      { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes rowOut    { to { opacity: 0; transform: translateX(20px); } }
+
+/* Вход на вкладку: блоки появляются по очереди снизу вверх */
+.view.enter-tab > * { animation: rise .45s var(--ease) both; }
+.view.enter-tab > :nth-child(2) { animation-delay: .04s; }
+.view.enter-tab > :nth-child(3) { animation-delay: .08s; }
+.view.enter-tab > :nth-child(4) { animation-delay: .12s; }
+.view.enter-tab > :nth-child(5) { animation-delay: .16s; }
+.view.enter-tab > :nth-child(n+6) { animation-delay: .2s; }
+
+/* Вложенный экран въезжает справа, при «Назад» — слева */
+.view.enter-push { animation: fromRight .35s var(--ease) both; }
+.view.enter-pop  { animation: fromLeft .35s var(--ease) both; }
+
+/* Отметка изменилась: карточка мягко появляется, день в неделе «пружинит» */
+.card.pop { animation: cardIn .35s var(--ease) both; }
+.day.pop { animation: pop .45s var(--ease-spring) both; }
+.streak-num.bump { animation: pulse .45s var(--ease-spring); transform-origin: left bottom; }
+
+/* Смена месяца в календаре */
+.grid.slide-next { animation: fromRight .3s var(--ease) both; }
+.grid.slide-prev { animation: fromLeft .3s var(--ease) both; }
+
+/* Столбики графика вырастают снизу по очереди (--i — номер столбика) */
+.bar i { transform-origin: bottom; animation: grow .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 50ms + 100ms); }
+
+/* Новые цифры статистики при смене периода */
+.stats.swap .stat b { animation: rise .3s var(--ease) both; }
+
+/* Отрезки: новый появляется, удалённый уезжает вправо */
+.seg.row-in { animation: rise .3s var(--ease) both; }
+.seg.row-out { animation: rowOut .2s var(--ease) forwards; pointer-events: none; }
+.pulse { animation: pulse .4s var(--ease-spring); }
+
+.error:not([hidden]) { animation: rise .25s var(--ease) both; }
+
+/* Если в системе включено «уменьшить движение» — почти выключаем анимации */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-delay: 0s !important;
+    transition-duration: .01ms !important;
+  }
 }
